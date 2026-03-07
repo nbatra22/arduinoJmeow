@@ -4,8 +4,9 @@ import json
 from datetime import datetime
 
 # https://intergular-laila-unmeaningly.ngrok-free.dev
+# https://tona-citizenly-wrinkledly.ngrok-free.dev
 
-SERVER_URI = "wss://intergular-laila-unmeaningly.ngrok-free.dev/ws" #change per program
+SERVER_URI = "wss://tona-citizenly-wrinkledly.ngrok-free.dev/ws" #change per program
 RECONNECT_DELAY = 5  # seconds
 
 async def listen():
