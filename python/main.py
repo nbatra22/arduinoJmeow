@@ -6,7 +6,7 @@ from arduino.app_utils import App
 # https://intergular-laila-unmeaningly.ngrok-free.dev izzy's url
 # https://tona-citizenly-wrinkledly.ngrok-free.dev nav's url
 
-DEVICE_NAME = "arduino1"  # change to "arduino2" on the other device
+DEVICE_NAME = "giver"  # change to "arduino2" on the other device
 SERVER_URI = "wss://tona-citizenly-wrinkledly.ngrok-free.dev/ws"
 RECONNECT_DELAY = 5
 
