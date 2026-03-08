@@ -52,21 +52,6 @@ bool configureMAX31875(uint8_t addr) {
   uint16_t cfgAfter;
   if (!i2cRead16(addr, 0x01, cfgAfter)) return false;
 
-  Monitor.print("Configured MAX31875 at 0x");
-  if (addr < 0x10) Monitor.print('0');
-  Monitor.print(addr, HEX);
-  Monitor.print(" | before=0x");
-  Monitor.print(cfgBefore, HEX);
-  Monitor.print(" after=0x");
-  Monitor.print(cfgAfter, HEX);
-  Monitor.print(" | RES=");
-  Monitor.print((cfgAfter >> 5) & 0x3, BIN);
-  Monitor.print(" DF=");
-  Monitor.print((cfgAfter >> 4) & 0x1);
-  Monitor.print(" SHDN=");
-  Monitor.println(cfgAfter & 0x1);
-
-  delay(100);
   return true;
 }
 
@@ -79,7 +64,6 @@ bool readTemperatureC(uint8_t addr, float &tempC) {
 
   uint16_t w = ((uint16_t)Wire.read() << 8) | Wire.read();
 
-  // MAX31875 temp is upper 12 bits, signed
   int16_t raw = (int16_t)w;
   raw >>= 4;
 
@@ -91,14 +75,14 @@ bool readTemperatureC(uint8_t addr, float &tempC) {
 
 bool initIMU() {
   Wire.beginTransmission(IMU_ADDR);
-  Wire.write(0x6B);   // power management register
-  Wire.write(0x00);   // wake device
+  Wire.write(0x6B);
+  Wire.write(0x00);
   return (Wire.endTransmission() == 0);
 }
 
 bool readGyro(int16_t &gx, int16_t &gy, int16_t &gz) {
   Wire.beginTransmission(IMU_ADDR);
-  Wire.write(0x43);   // gyro register start
+  Wire.write(0x43);
   if (Wire.endTransmission(false) != 0) return false;
 
   if (Wire.requestFrom((int)IMU_ADDR, 6) != 6) return false;
@@ -116,29 +100,13 @@ bool readGyro(int16_t &gx, int16_t &gy, int16_t &gz) {
 void scanI2CBus() {
   foundCount = 0;
 
-  Monitor.println();
-  Monitor.println("Scanning I2C bus...");
-
   for (uint8_t addr = 0x08; addr <= 0x77; addr++) {
     Wire.beginTransmission(addr);
     uint8_t err = Wire.endTransmission();
 
-    if (err == 0) {
-      Monitor.print("Found device at 0x");
-      if (addr < 0x10) Monitor.print('0');
-      Monitor.println(addr, HEX);
-
-      if (foundCount < 16) {
-        foundAddrs[foundCount++] = addr;
-      }
+    if (err == 0 && foundCount < 16) {
+      foundAddrs[foundCount++] = addr;
     }
-  }
-
-  Monitor.print("Scan complete. foundCount = ");
-  Monitor.println(foundCount);
-
-  if (foundCount == 0) {
-    Monitor.println("No I2C devices found.");
   }
 }
 
@@ -146,25 +114,17 @@ void configureTempSensorsOnly() {
   for (uint8_t i = 0; i < foundCount; i++) {
     uint8_t addr = foundAddrs[i];
 
-    // Skip the IMU address and skip 0x0C
     if (addr == IMU_ADDR || addr == 0x0C) continue;
-
-    if (!configureMAX31875(addr)) {
-      Monitor.print("Warning: MAX31875 config failed at 0x");
-      if (addr < 0x10) Monitor.print('0');
-      Monitor.println(addr, HEX);
-    }
+    configureMAX31875(addr);
   }
 }
 
 // ---------------- Setup ----------------
 
 void setup() {
+  Bridge.begin();
   Monitor.begin(115200);
   delay(1000);
-
-  Monitor.println();
-  Monitor.println("UNO Q | Combined IMU + Temp + Touch Test");
 
   Wire.begin();
 
@@ -173,76 +133,80 @@ void setup() {
   pinMode(TOUCH_PIN, INPUT);
 
   scanI2CBus();
-
-  if (initIMU()) {
-    Monitor.println("IMU initialized at 0x69");
-  } else {
-    Monitor.println("IMU init failed at 0x69");
-  }
-
+  initIMU();
   configureTempSensorsOnly();
-
-  Monitor.println("Setup complete.");
 }
 
 // ---------------- Loop ----------------
 
 void loop() {
-  // ----- Touch sensor and touch LED -----
   int touchState = digitalRead(TOUCH_PIN);
 
   if (touchState == HIGH) {
     digitalWrite(TOUCH_LED_PIN, HIGH);
-    Monitor.println("Touch: HIGH");
   } else {
     digitalWrite(TOUCH_LED_PIN, LOW);
-    Monitor.println("Touch: LOW");
   }
 
-  // ----- Read IMU gyro and drive IMU LED -----
-  int16_t gx, gy, gz;
-  if (readGyro(gx, gy, gz)) {
-    float speed = sqrt((float)gx * gx + (float)gy * gy + (float)gz * gz);
+  int16_t gx = 0, gy = 0, gz = 0;
+  float speed = 0.0;
+  int brightness = 0;
+  bool imuOk = readGyro(gx, gy, gz);
 
-    int brightness = map((int)speed, 0, 20000, 0, 255);
+  if (imuOk) {
+    speed = sqrt((float)gx * gx + (float)gy * gy + (float)gz * gz);
+    brightness = map((int)speed, 0, 20000, 0, 255);
     brightness = constrain(brightness, 0, 255);
     analogWrite(IMU_LED_PIN, brightness);
-
-    Monitor.print("GX: ");
-    Monitor.print(gx);
-    Monitor.print("  GY: ");
-    Monitor.print(gy);
-    Monitor.print("  GZ: ");
-    Monitor.print(gz);
-    Monitor.print("  | Speed: ");
-    Monitor.print(speed);
-    Monitor.print("  | IMU LED: ");
-    Monitor.println(brightness);
-  } else {
-    Monitor.println("IMU read failed");
   }
 
-  // ----- Read all temperature sensors except IMU and 0x0C -----
+  // Build temperature array as a JSON fragment
+  String tempsJson = "[";
+  bool firstTemp = true;
+
   for (uint8_t i = 0; i < foundCount; i++) {
     uint8_t addr = foundAddrs[i];
-
     if (addr == IMU_ADDR || addr == 0x0C) continue;
 
     float tempC;
     if (readTemperatureC(addr, tempC)) {
-      Monitor.print("addr 0x");
-      if (addr < 0x10) Monitor.print('0');
-      Monitor.print(addr, HEX);
-      Monitor.print(" | Temperature: ");
-      Monitor.print(tempC, 4);
-      Monitor.println(" C");
-    } else {
-      Monitor.print("Read failed at 0x");
-      if (addr < 0x10) Monitor.print('0');
-      Monitor.println(addr, HEX);
+      if (!firstTemp) tempsJson += ",";
+      firstTemp = false;
+
+      tempsJson += "{\"addr\":\"0x";
+      if (addr < 0x10) tempsJson += "0";
+      tempsJson += String(addr, HEX);
+      tempsJson += "\",\"tempC\":";
+      tempsJson += String(tempC, 4);
+      tempsJson += "}";
     }
   }
 
-  Monitor.println("------------------------");
+  tempsJson += "]";
+
+  String payload = "{";
+  payload += "\"touch\":";
+  payload += String(touchState);
+  payload += ",\"imu_ok\":";
+  payload += (imuOk ? "true" : "false");
+  payload += ",\"gx\":";
+  payload += String(gx);
+  payload += ",\"gy\":";
+  payload += String(gy);
+  payload += ",\"gz\":";
+  payload += String(gz);
+  payload += ",\"speed\":";
+  payload += String(speed, 2);
+  payload += ",\"imu_led\":";
+  payload += String(brightness);
+  payload += ",\"temps\":";
+  payload += tempsJson;
+  payload += "}";
+
+  Bridge.notify("sensor_packet", payload);
+
+  // keep monitor output minimal
+  Monitor.println(payload);
+
   delay(500);
 }
