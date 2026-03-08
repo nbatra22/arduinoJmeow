@@ -8,5 +8,7 @@ profiles:
       - dependency: ArxTypeTraits (0.3.2)
       - dependency: DebugLog (0.8.4)
       - MsgPack (0.4.2)
+      - dependency: Arduino_RPClite (0.2.1)
+      - Arduino_RouterBridge (0.3.0)
 
 default_profile: default
